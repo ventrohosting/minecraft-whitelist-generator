@@ -2,7 +2,7 @@
 
 Spielernamen eingeben, UUIDs von Mojang abrufen oder für Offline-Server berechnen und die fertige whitelist.json herunterladen: kostenlos und ohne Anmeldung.
 
-**Online nutzen:** [Minecraft Whitelist-Generator](https://ventrohosting.com/tools/minecraft-whitelist-generator) · Demo: https://dannytheone.github.io/minecraft-whitelist-generator/
+**Online nutzen:** [Minecraft Whitelist-Generator](https://ventrohosting.com/tools/minecraft-whitelist-generator) · Demo: https://ventrohosting.github.io/minecraft-whitelist-generator/
 
 ## Funktionen
 
