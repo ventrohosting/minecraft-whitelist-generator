@@ -1,4 +1,5 @@
-/* VentroHosting tools: RAM calculator, server.properties, MOTD and color generators, whitelist generator, status check. Plain JavaScript,
+/* VentroHosting tools: RAM calculator, server.properties, MOTD and color generators, whitelist generator, status check, circle/sphere
+   generator, Nether calculator, server icon maker. Plain JavaScript,
    no libraries, no cookies; only the UUID lookup and the status check ask the shop's API, everything else stays in the browser. The RAM rule is the same as AdvisorService::minecraftRam (PHP). */
 (function () {
   'use strict';
@@ -35,7 +36,13 @@
       for (var i = 0; i < plans.length; i++) { if (plans[i].ram >= mb) { fit = plans[i]; break; } }
       if (!plans.length) { planOut.textContent = ''; return; }
       if (fit) {
-        planOut.textContent = 'Passender Tarif: ' + fit.name + ' mit ' + fit.label + ' für ' + fit.price + ' € pro 30 Tage.';
+        planOut.textContent = 'Passender Tarif: ' + fit.name + ' mit ' + fit.label + ' für ' + fit.price + ' € pro ' + (fit.days || 30) + ' Tage. ';
+        if (fit.url) {
+          var a = document.createElement('a');
+          a.href = fit.url; a.textContent = fit.name + ' bestellen →'; a.className = 'vht-order';
+          if (window.top !== window.self) { a.target = '_blank'; a.rel = 'noopener'; }
+          planOut.appendChild(a);
+        }
       } else {
         var last = plans[plans.length - 1];
         planOut.textContent = 'Dein Bedarf liegt über dem größten Tarif (' + last.name + ', ' + last.label + '). Auf der Minecraft-Seite stellst du mit dem RAM-Regler eine größere Größe ein.';
@@ -429,6 +436,191 @@
     if (q) { input.value = q.slice(0, 270); check(input.value); }
   }
 
+
+  /* Circle and sphere generator (2026-11-11): block (i, j) is inside when the distance of its centre from the shape's centre is at most
+     the radius. Outline: an inside block with an outside neighbour (thin = 4 sides, the line connects diagonally; thick = 8 sides,
+     the line connects at the edges). Sphere: same in 3D, one layer at a time; shell = an inside block with an outside 6-neighbour. */
+  function initCircle(root) {
+    var shape = root.querySelector('#c-shape'), w = root.querySelector('#c-w'), h = root.querySelector('#c-h'), fill = root.querySelector('#c-fill');
+    var layer = root.querySelector('#c-layer'), layerOut = root.querySelector('#c-layer-out'), layerBox = root.querySelector('#c-layer-box'), hBox = root.querySelector('#c-h-box');
+    var canvas = root.querySelector('#c-canvas'), stats = root.querySelector('#c-stats'), rows = root.querySelector('#c-rows');
+    if (!shape || !w || !canvas) { return; }
+    var totalCache = {};
+    function num(el, min, max) { var v = parseInt(el.value, 10); if (isNaN(v)) { v = min; } return Math.max(min, Math.min(max, v)); }
+    function inside2(x, y, a, b) { var dx = (x + 0.5 - a / 2) / (a / 2), dy = (y + 0.5 - b / 2) / (b / 2); return dx * dx + dy * dy <= 1; }
+    function inside3(x, y, z, d) { var r = d / 2, dx = x + 0.5 - r, dy = y + 0.5 - r, dz = z + 0.5 - r; return dx * dx + dy * dy + dz * dz <= r * r; }
+    function grid() {
+      var sphere = shape.value !== 'kreis', mode = fill.value;
+      var a = num(w, 1, sphere ? 128 : 256), b = sphere ? a : num(h, 1, 256);
+      hBox.style.display = sphere ? 'none' : ''; layerBox.style.display = sphere ? '' : 'none';
+      var g = [], total = 0;
+      if (sphere) {
+        // layer 1 = top layer; a dome (Kuppel) is the upper half of the sphere
+        var half = shape.value === 'kuppel', depth = half ? Math.ceil(a / 2) : a;
+        layer.min = 1; layer.max = depth;
+        var L = Math.max(1, Math.min(depth, parseInt(layer.value, 10) || 1)); layer.value = L;
+        var key = a + mode + half;
+        if (totalCache[key] === undefined) { var t = 0; for (var zz = 0; zz < depth; zz++) { for (var yy = 0; yy < a; yy++) { for (var xx = 0; xx < a; xx++) { if (cell3(xx, yy, zz, a, mode)) { t++; } } } } totalCache[key] = t; }
+        total = totalCache[key];
+        for (var y = 0; y < a; y++) { var row = []; for (var x = 0; x < a; x++) { row.push(cell3(x, y, L - 1, a, mode)); } g.push(row); }
+        layerOut.textContent = L + ' von ' + depth + ' (von oben gezählt)';
+      } else {
+        for (var y2 = 0; y2 < b; y2++) { var r2 = []; for (var x2 = 0; x2 < a; x2++) { r2.push(cell2(x2, y2, a, b, mode)); } g.push(r2); }
+      }
+      return { g: g, a: a, b: b, sphere: sphere, total: total };
+    }
+    function cell2(x, y, a, b, mode) {
+      if (!inside2(x, y, a, b)) { return false; }
+      if (mode === 'voll') { return true; }
+      var n = mode === 'duenn' ? [[1, 0], [-1, 0], [0, 1], [0, -1]] : [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]];
+      for (var i = 0; i < n.length; i++) { var nx = x + n[i][0], ny = y + n[i][1]; if (nx < 0 || ny < 0 || nx >= a || ny >= b || !inside2(nx, ny, a, b)) { return true; } }
+      return false;
+    }
+    function cell3(x, y, z, d, mode) {
+      if (!inside3(x, y, z, d)) { return false; }
+      if (mode === 'voll') { return true; }
+      var n = [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]];
+      if (mode === 'dick') { n = []; for (var i = -1; i <= 1; i++) { for (var j = -1; j <= 1; j++) { for (var k = -1; k <= 1; k++) { if (i || j || k) { n.push([i, j, k]); } } } } }
+      for (var m = 0; m < n.length; m++) { var nx = x + n[m][0], ny = y + n[m][1], nz = z + n[m][2]; if (nx < 0 || ny < 0 || nz < 0 || nx >= d || ny >= d || nz >= d || !inside3(nx, ny, nz, d)) { return true; } }
+      return false;
+    }
+    function stacks(n) { var st = Math.floor(n / 64), r = n % 64; return n + ' Blöcke' + (st ? ' (' + st + ' Stack' + (st > 1 ? 's' : '') + (r ? ' + ' + r : '') + ')' : ''); }
+    function draw() {
+      var r = grid(), g = r.g, a = r.a, b = r.b;
+      var avail = Math.min(canvas.parentElement.clientWidth || 600, 900);
+      var cs = Math.max(2, Math.floor(avail / Math.max(a, b)));
+      var dpr = window.devicePixelRatio || 1;
+      canvas.width = a * cs * dpr; canvas.height = b * cs * dpr; canvas.style.width = a * cs + 'px'; canvas.style.height = b * cs + 'px';
+      var ctx = canvas.getContext('2d'); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.fillStyle = '#0d1424'; ctx.fillRect(0, 0, a * cs, b * cs);
+      var n = 0, lines = [];
+      for (var y = 0; y < b; y++) {
+        var cnt = 0;
+        for (var x = 0; x < a; x++) {
+          if (g[y][x]) { n++; cnt++; ctx.fillStyle = ((x + y) % 2) ? '#19d3b6' : '#14b89f'; ctx.fillRect(x * cs, y * cs, cs, cs); }
+        }
+        lines.push(cnt);
+      }
+      if (cs >= 6) {
+        ctx.strokeStyle = 'rgba(255,255,255,.12)'; ctx.lineWidth = 1; ctx.beginPath();
+        for (var i = 0; i <= a; i++) { ctx.moveTo(i * cs + .5, 0); ctx.lineTo(i * cs + .5, b * cs); }
+        for (var j = 0; j <= b; j++) { ctx.moveTo(0, j * cs + .5); ctx.lineTo(a * cs, j * cs + .5); }
+        ctx.stroke();
+      }
+      // centre line(s): one block wide for odd sizes, between two blocks for even sizes
+      ctx.strokeStyle = 'rgba(255,90,90,.85)'; ctx.lineWidth = 2; ctx.beginPath();
+      ctx.moveTo(a * cs / 2, 0); ctx.lineTo(a * cs / 2, b * cs); ctx.moveTo(0, b * cs / 2); ctx.lineTo(a * cs, b * cs / 2); ctx.stroke();
+      stats.textContent = (r.sphere ? 'Diese Ebene: ' + stacks(n) + '. Ganze ' + (shape.value === 'kuppel' ? 'Kuppel' : 'Kugel') + ': ' + stacks(r.total) + '.' : 'Gesamt: ' + stacks(n) + '.') + ' Größe ' + a + ' × ' + b + ' Blöcke.';
+      rows.textContent = '';
+      lines.forEach(function (c, i) { if (c) { var li = document.createElement('li'); li.textContent = 'Reihe ' + (i + 1) + ': ' + c + ' Blöcke'; rows.appendChild(li); } });
+      canvas.setAttribute('aria-label', (r.sphere ? 'Ebene ' + layer.value + ' der ' + (shape.value === 'kuppel' ? 'Kuppel' : 'Kugel') : 'Kreis') + ' mit ' + n + ' Blöcken, Breite ' + a + ', Höhe ' + b);
+    }
+    [shape, w, h, fill, layer].forEach(function (el) { el.addEventListener('input', draw); el.addEventListener('change', draw); });
+    window.addEventListener('resize', function () { clearTimeout(root.__t); root.__t = setTimeout(draw, 150); });
+    draw();
+  }
+
+  /* Nether calculator: Overworld -> Nether = floor(X / 8), Y unchanged, floor(Z / 8); Nether -> Overworld = X * 8 (minecraft.wiki, Nether portal). */
+  function initNether(root) {
+    var f = {}; ['ox', 'oy', 'oz', 'nx', 'ny', 'nz'].forEach(function (k) { f[k] = root.querySelector('#n-' + k); });
+    var note = root.querySelector('#n-note');
+    if (!f.ox) { return; }
+    var LIMIT = 29999984;
+    function val(el) { var v = parseFloat(String(el.value).replace(',', '.')); return isNaN(v) ? null : Math.max(-LIMIT, Math.min(LIMIT, v)); }
+    function fromOver() {
+      var x = val(f.ox), y = val(f.oy), z = val(f.oz);
+      f.nx.value = x === null ? '' : Math.floor(x / 8); f.nz.value = z === null ? '' : Math.floor(z / 8); f.ny.value = y === null ? '' : Math.floor(y);
+      hint(y);
+    }
+    function fromNether() {
+      var x = val(f.nx), y = val(f.ny), z = val(f.nz);
+      f.ox.value = x === null ? '' : Math.floor(x) * 8; f.oz.value = z === null ? '' : Math.floor(z) * 8; f.oy.value = y === null ? '' : Math.floor(y);
+      hint(y);
+    }
+    function hint(y) {
+      if (!note) { return; }
+      note.textContent = y !== null && y >= 128 ? 'Achtung: Ab Y 128 bist du im Nether über dem Grundgestein-Dach. Baue das Portal darunter.' : '';
+    }
+    ['ox', 'oy', 'oz'].forEach(function (k) { f[k].addEventListener('input', fromOver); });
+    ['nx', 'ny', 'nz'].forEach(function (k) { f[k].addEventListener('input', fromNether); });
+    var paste = root.querySelector('#n-paste');
+    if (paste) {
+      paste.addEventListener('input', function () {
+        var m = paste.value.match(/(-?\d+(?:[.,]\d+)?)[\s,;/]+(-?\d+(?:[.,]\d+)?)[\s,;/]+(-?\d+(?:[.,]\d+)?)/);
+        if (!m) { return; }
+        var target = root.querySelector('input[name="n-from"]:checked');
+        var pre = target && target.value === 'nether' ? 'n' : 'o';
+        f[pre + 'x'].value = m[1].replace(',', '.'); f[pre + 'y'].value = m[2].replace(',', '.'); f[pre + 'z'].value = m[3].replace(',', '.');
+        if (pre === 'n') { fromNether(); } else { fromOver(); }
+      });
+    }
+    fromOver();
+  }
+
+  /* Server icon: everything stays in the browser (FileReader + canvas); the result is a 64 x 64 PNG named server-icon.png. */
+  function initIcon(root) {
+    var file = root.querySelector('#i-file'), zoom = root.querySelector('#i-zoom'), mx = root.querySelector('#i-x'), my = root.querySelector('#i-y');
+    var smooth = root.querySelector('#i-smooth'), text = root.querySelector('#i-text'), c1 = root.querySelector('#i-c1'), c2 = root.querySelector('#i-c2');
+    var big = root.querySelector('#i-big'), small = root.querySelector('#i-small'), list = root.querySelector('#i-list'), dl = root.querySelector('#i-dl');
+    var status = root.querySelector('#i-status'), name = root.querySelector('#i-name');
+    if (!big || !small) { return; }
+    var img = null;
+    function say(t) { if (status) { status.textContent = t; } }
+    function paint(ctx, size) {
+      ctx.clearRect(0, 0, size, size);
+      ctx.imageSmoothingEnabled = !smooth || smooth.checked; ctx.imageSmoothingQuality = 'high';
+      if (img) {
+        var z = parseFloat(zoom.value) || 1, side = Math.min(img.width, img.height) / z;
+        var sx = (img.width - side) * (parseFloat(mx.value) / 100), sy = (img.height - side) * (parseFloat(my.value) / 100);
+        ctx.drawImage(img, sx, sy, side, side, 0, 0, size, size);
+      } else {
+        var gr = ctx.createLinearGradient(0, 0, size, size); gr.addColorStop(0, c1.value); gr.addColorStop(1, c2.value);
+        ctx.fillStyle = gr; ctx.fillRect(0, 0, size, size);
+        var t = (text.value || '').trim().slice(0, 3);
+        if (t) {
+          ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+          ctx.font = '800 ' + Math.round(size * (t.length > 2 ? 0.36 : t.length > 1 ? 0.46 : 0.62)) + 'px Inter, system-ui, sans-serif';
+          ctx.shadowColor = 'rgba(0,0,0,.35)'; ctx.shadowOffsetY = size / 32; ctx.shadowBlur = size / 16;
+          ctx.fillText(t, size / 2, size / 2 + size * 0.03); ctx.shadowColor = 'transparent';
+        }
+      }
+    }
+    function render() {
+      // the file itself is always drawn at 64 x 64; the large preview scales that result up, so it shows what the game shows
+      paint(small.getContext('2d'), 64);
+      var b = big.getContext('2d'); b.imageSmoothingEnabled = false; b.clearRect(0, 0, big.width, big.height); b.drawImage(small, 0, 0, big.width, big.height);
+      if (list) { var l = list.getContext('2d'); l.imageSmoothingEnabled = true; l.clearRect(0, 0, list.width, list.height); l.drawImage(small, 0, 0, list.width, list.height); }
+      root.querySelectorAll('[data-i-img]').forEach(function (el) { el.disabled = !img; });
+      root.querySelectorAll('[data-i-txt]').forEach(function (el) { el.disabled = !!img; });
+      if (name) { root.querySelector('#i-prev-name').textContent = name.value || 'Mein Minecraft-Server'; }
+    }
+    if (file) {
+      file.addEventListener('change', function () {
+        var f = file.files && file.files[0];
+        if (!f) { return; }
+        if (!/^image\//.test(f.type)) { say('Bitte wähle ein Bild (PNG, JPG, GIF oder WebP).'); return; }
+        var url = URL.createObjectURL(f), im = new Image();
+        im.onload = function () { img = im; zoom.value = 1; mx.value = 50; my.value = 50; render(); say('Bild geladen. Ausschnitt mit Zoom und Position wählen.'); };
+        im.onerror = function () { say('Das Bild konnte nicht gelesen werden.'); };
+        im.src = url;
+      });
+    }
+    var reset = root.querySelector('#i-reset');
+    if (reset) { reset.addEventListener('click', function () { img = null; if (file) { file.value = ''; } render(); say('Bild entfernt, jetzt mit Text und Farben.'); }); }
+    [zoom, mx, my, smooth, text, c1, c2, name].forEach(function (el) { if (el) { el.addEventListener('input', render); el.addEventListener('change', render); } });
+    if (dl) {
+      dl.addEventListener('click', function () {
+        small.toBlob(function (blob) {
+          if (!blob) { say('Download nicht möglich.'); return; }
+          var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'server-icon.png';
+          document.body.appendChild(a); a.click(); a.remove(); setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);
+          say('server-icon.png (64 × 64 Pixel) gespeichert.');
+        }, 'image/png');
+      });
+    }
+    render();
+  }
+
   function init() {
     var ram = document.querySelector('[data-vh-ram]');
     if (ram) { initRam(ram); }
@@ -442,6 +634,12 @@
     if (wl) { initWhitelist(wl); }
     var st = document.querySelector('[data-vh-status]');
     if (st) { initStatus(st); }
+    var circle = document.querySelector('[data-vh-circle]');
+    if (circle) { initCircle(circle); }
+    var nether = document.querySelector('[data-vh-nether]');
+    if (nether) { initNether(nether); }
+    var icon = document.querySelector('[data-vh-icon]');
+    if (icon) { initIcon(icon); }
   }
 
   if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', init); } else { init(); }
